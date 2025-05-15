@@ -2,14 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>QR Scan - SoftExpert</title>
+  <title>QR Scanner to SoftExpert</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     body {
       font-family: Arial, sans-serif;
       padding: 10px;
@@ -19,12 +16,10 @@
       flex-direction: column;
       align-items: center;
     }
-
     h2 {
       text-align: center;
       margin-bottom: 10px;
     }
-
     select, input, button {
       width: 90%;
       max-width: 400px;
@@ -32,7 +27,6 @@
       padding: 10px;
       font-size: 1rem;
     }
-
     #qr-reader {
       width: 100%;
       max-width: 400px;
@@ -43,7 +37,6 @@
       border-radius: 10px;
       overflow: hidden;
     }
-
     .scan-box {
       position: absolute;
       top: 30%;
@@ -54,24 +47,20 @@
       z-index: 2;
       pointer-events: none;
     }
-
     #scannedCode {
       font-weight: bold;
       text-align: center;
       border: 2px solid #999;
       background: white;
     }
-
     #scannedCode.valid {
       border-color: green;
       background-color: #e0ffe0;
     }
-
     #scannedCode.invalid {
       border-color: red;
       background-color: #ffe0e0;
     }
-
     form {
       display: flex;
       flex-direction: column;
@@ -79,7 +68,6 @@
       width: 100%;
       max-width: 420px;
     }
-
     @media screen and (max-width: 500px) {
       #qr-reader {
         width: 100%;
@@ -103,15 +91,18 @@
     <div class="scan-box"></div>
   </div>
 
-  <!-- Unified Scan Field (Manual + Camera) -->
+  <!-- QR Code Text -->
   <input type="text" id="scannedCode" placeholder="Scanned QR Code..." oninput="manualScan()" readonly />
 
-  <!-- Output Fields -->
+  <!-- Output Form -->
   <form id="dataForm">
     <input type="text" id="partNumber" placeholder="Part Number" required />
     <input type="text" id="lotNumber" placeholder="Lot Number" required />
     <input type="text" id="quantity" placeholder="Quantity" required />
-    <button type="submit">Submit to SoftExpert</button>
+    <input type="number" id="qtySorted" placeholder="Qty Sorted" required />
+    <input type="number" id="qtyNG" placeholder="Qty NG" required />
+    <input type="number" id="qtyOK" placeholder="Qty OK (auto)" readonly />
+    <button type="submit" id="submitBtn" disabled>Submit to SoftExpert</button>
   </form>
 
   <script>
@@ -123,20 +114,27 @@
       scannedField.value = qr;
 
       const parts = qr.split("|");
-      const isValid = parts.length >= 6;
+      const isValid = parts.length >= 4;
 
       scannedField.classList.remove("valid", "invalid");
       scannedField.classList.add(isValid ? "valid" : "invalid");
 
       if (isValid) {
-        document.getElementById("partNumber").value = parts[0].trim();
-        document.getElementById("quantity").value = parts[3].trim();
-        document.getElementById("lotNumber").value = parts[5].trim();
+        const partNumber = parts[0].trim();
+        const lotNumber = parts[1].trim();
+        const qtyRaw = parts[2].trim(); // e.g., Q16
+        const quantity = qtyRaw.replace(/[^\d]/g, ""); // extract numeric only
+
+        document.getElementById("partNumber").value = partNumber;
+        document.getElementById("lotNumber").value = lotNumber;
+        document.getElementById("quantity").value = quantity;
       } else {
         document.getElementById("partNumber").value = "";
-        document.getElementById("quantity").value = "";
         document.getElementById("lotNumber").value = "";
+        document.getElementById("quantity").value = "";
       }
+
+      checkSubmitEligibility();
     }
 
     function manualScan() {
@@ -144,6 +142,25 @@
       if (text.includes("|")) {
         fillFromText(text);
       }
+    }
+
+    function updateQtyOK() {
+      const sorted = parseInt(document.getElementById("qtySorted").value) || 0;
+      const ng = parseInt(document.getElementById("qtyNG").value) || 0;
+      const ok = Math.max(0, sorted - ng);
+      document.getElementById("qtyOK").value = ok;
+      checkSubmitEligibility();
+    }
+
+    function checkSubmitEligibility() {
+      const requiredFields = ["partNumber", "lotNumber", "quantity", "qtySorted", "qtyNG", "qtyOK"];
+      const allFilled = requiredFields.every(id => {
+        const val = document.getElementById(id).value.trim();
+        return val !== "";
+      });
+
+      const qtyOK = parseInt(document.getElementById("qtyOK").value) || -1;
+      document.getElementById("submitBtn").disabled = !(allFilled && qtyOK >= 0);
     }
 
     function startCamera() {
@@ -163,7 +180,7 @@
             fillFromText(decodedText);
           }
         },
-        error => { /* silently ignore */ }
+        error => {}
       ).catch(err => alert("Camera error: " + err));
     }
 
@@ -179,19 +196,26 @@
       const mode = document.getElementById("modeSelect").value;
       const scannedCode = document.getElementById("scannedCode");
 
+      if (qrScanner) stopCamera();
+
       if (mode === "camera") {
         scannedCode.readOnly = true;
         startCamera();
       } else {
         scannedCode.readOnly = false;
-        stopCamera();
         scannedCode.focus();
       }
 
       scannedCode.value = "";
       scannedCode.classList.remove("valid", "invalid");
       document.getElementById("dataForm").reset();
+      document.getElementById("qtyOK").value = "";
+      document.getElementById("submitBtn").disabled = true;
+      lastScan = "";
     }
+
+    document.getElementById("qtySorted").addEventListener("input", updateQtyOK);
+    document.getElementById("qtyNG").addEventListener("input", updateQtyOK);
 
     document.getElementById("dataForm").addEventListener("submit", function (e) {
       e.preventDefault();
@@ -199,13 +223,16 @@
       const payload = {
         partNumber: document.getElementById("partNumber").value,
         lotNumber: document.getElementById("lotNumber").value,
-        quantity: document.getElementById("quantity").value
+        quantity: document.getElementById("quantity").value,
+        qtySorted: document.getElementById("qtySorted").value,
+        qtyNG: document.getElementById("qtyNG").value,
+        qtyOK: document.getElementById("qtyOK").value
       };
 
-      fetch("https://yorozu.softexpert.com/apigateway/v1/table/YOUR_TABLE_ID/record", {
+      fetch("https://yorozu.softexpert.com/apigateway/v1/table/ sortresultssubt/record", {
         method: "POST",
         headers: {
-          "Authorization": "Bearer YOUR_API_TOKEN",
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3Mjk3ODQxMzIsImV4cCI6MTg4NzU1MDUzMiwiaWRsb2dpbiI6InN3YXJvb3ByZWRkeS5ndWpqdWxhIiwicmF0ZWxpbWl0IjoxMjAsInF1b3RhbGltaXQiOjEwMDAwMH0.hFvd-PnHEiYoEIBujUi9OSA0zCJsjQkPJFaxR621NWE",
           "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
@@ -219,6 +246,8 @@
         document.getElementById("dataForm").reset();
         document.getElementById("scannedCode").value = "";
         document.getElementById("scannedCode").classList.remove("valid", "invalid");
+        document.getElementById("qtyOK").value = "";
+        document.getElementById("submitBtn").disabled = true;
         lastScan = "";
       })
       .catch(err => alert("❌ Error: " + err.message));
