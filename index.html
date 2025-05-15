@@ -1,76 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>QR Scanner - Camera or Manual</title>
+  <meta charset="UTF-8" />
+  <title>QR Scan - SoftExpert</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: Arial, sans-serif;
-      padding: 20px;
-      text-align: center;
+      padding: 10px;
+      margin: 0;
+      background: #f4f4f4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
-    input, button, select {
+
+    h2 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    select, input, button {
+      width: 90%;
+      max-width: 400px;
       margin: 8px;
       padding: 10px;
-      width: 300px;
+      font-size: 1rem;
     }
+
     #qr-reader {
-      width: 320px;
-      height: 320px;
+      width: 100%;
+      max-width: 400px;
+      height: auto;
       position: relative;
-      margin: 0 auto 10px;
+      margin-bottom: 10px;
       display: none;
-      border: 2px solid #ccc;
       border-radius: 10px;
+      overflow: hidden;
     }
-    #camera-label {
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
+
     .scan-box {
       position: absolute;
-      top: 35%;
+      top: 30%;
       left: 25%;
       width: 50%;
       height: 30%;
       border: 3px solid limegreen;
-      box-sizing: border-box;
-      z-index: 10;
+      z-index: 2;
+      pointer-events: none;
     }
+
+    #scannedCode {
+      font-weight: bold;
+      text-align: center;
+      border: 2px solid #999;
+      background: white;
+    }
+
+    #scannedCode.valid {
+      border-color: green;
+      background-color: #e0ffe0;
+    }
+
+    #scannedCode.invalid {
+      border-color: red;
+      background-color: #ffe0e0;
+    }
+
     form {
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin-top: 20px;
+      width: 100%;
+      max-width: 420px;
     }
-    #manualInput {
-      display: none;
+
+    @media screen and (max-width: 500px) {
+      #qr-reader {
+        width: 100%;
+        height: auto;
+      }
     }
   </style>
 </head>
 <body>
 
-  <h2>Scan Label (QR or Manual) → Submit to SoftExpert</h2>
+  <h2>Scan Label → Submit to SoftExpert</h2>
 
   <!-- Mode Switch -->
   <select id="modeSelect" onchange="toggleMode()">
     <option value="camera">📷 Camera Mode</option>
-    <option value="manual">⌨️ Manual (Scanner)</option>
+    <option value="manual">⌨️ Manual Mode</option>
   </select>
 
-  <!-- Label -->
-  <div id="camera-label">📷 Align QR Code Inside the Box</div>
-
-  <!-- QR Camera View with overlay -->
+  <!-- Camera Display -->
   <div id="qr-reader">
-    <div class="scan-box"></div> <!-- Guide Box -->
+    <div class="scan-box"></div>
   </div>
 
-  <!-- Live Scanned Text -->
-  <input type="text" id="qrText" placeholder="Scanned QR Code" readonly />
-
-  <!-- Manual Barcode Scanner -->
-  <input type="text" id="manualInput" placeholder="Scan Here..." oninput="manualScan()" />
+  <!-- Unified Scan Field (Manual + Camera) -->
+  <input type="text" id="scannedCode" placeholder="Scanned QR Code..." oninput="manualScan()" readonly />
 
   <!-- Output Fields -->
   <form id="dataForm">
@@ -80,101 +114,118 @@
     <button type="submit">Submit to SoftExpert</button>
   </form>
 
-<script>
-  let qrScanner;
-  let lastScan = ""; // prevent duplicate scan loop
+  <script>
+    let qrScanner;
+    let lastScan = "";
 
-  function fillFromText(qr) {
-    if (qr === lastScan) return; // ignore repeat
-    lastScan = qr;
+    function fillFromText(qr) {
+      const scannedField = document.getElementById("scannedCode");
+      scannedField.value = qr;
 
-    document.getElementById("qrText").value = qr;
-    const parts = qr.split("|");
+      const parts = qr.split("|");
+      const isValid = parts.length >= 6;
 
-    if (parts.length >= 6) {
-      const isEmpty = !document.getElementById("partNumber").value;
-      if (isEmpty) {
+      scannedField.classList.remove("valid", "invalid");
+      scannedField.classList.add(isValid ? "valid" : "invalid");
+
+      if (isValid) {
         document.getElementById("partNumber").value = parts[0].trim();
         document.getElementById("quantity").value = parts[3].trim();
         document.getElementById("lotNumber").value = parts[5].trim();
-
-        // 🔔 Audio/visual feedback
-        alert("✅ QR Code Scanned!");
+      } else {
+        document.getElementById("partNumber").value = "";
+        document.getElementById("quantity").value = "";
+        document.getElementById("lotNumber").value = "";
       }
     }
-  }
 
-  function manualScan() {
-    const text = document.getElementById("manualInput").value;
-    if (text.includes("|")) {
-      fillFromText(text);
-      document.getElementById("manualInput").value = "";
+    function manualScan() {
+      const text = document.getElementById("scannedCode").value;
+      if (text.includes("|")) {
+        fillFromText(text);
+      }
     }
-  }
 
-  function startCameraScanner() {
-    qrScanner = new Html5Qrcode("qr-reader");
-    qrScanner.start(
-      { facingMode: "environment" },
-      {
-        fps: 10,
-        qrbox: { width: 280, height: 180 } // larger box for better scan
-      },
-      (decodedText) => fillFromText(decodedText),
-      err => { /* Optional: console.warn("Scan error", err); */ }
-    ).catch(err => alert("Camera error: " + err));
-  }
+    function startCamera() {
+      const reader = document.getElementById("qr-reader");
+      reader.style.display = "block";
 
-  function toggleMode() {
-    const mode = document.getElementById("modeSelect").value;
-    const reader = document.getElementById("qr-reader");
-    const manual = document.getElementById("manualInput");
-    const label = document.getElementById("camera-label");
-
-    if (qrScanner) qrScanner.stop().catch(() => {});
-    reader.style.display = (mode === "camera") ? "block" : "none";
-    label.style.display = (mode === "camera") ? "block" : "none";
-    manual.style.display = (mode === "manual") ? "block" : "none";
-    document.getElementById("qrText").value = "";
-    lastScan = "";
-
-    if (mode === "camera") {
-      startCameraScanner();
+      qrScanner = new Html5Qrcode("qr-reader");
+      qrScanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 180 }
+        },
+        (decodedText) => {
+          if (decodedText !== lastScan) {
+            lastScan = decodedText;
+            fillFromText(decodedText);
+          }
+        },
+        error => { /* silently ignore */ }
+      ).catch(err => alert("Camera error: " + err));
     }
-  }
 
-  document.getElementById("dataForm").addEventListener("submit", function (e) {
-    e.preventDefault();
+    function stopCamera() {
+      const reader = document.getElementById("qr-reader");
+      reader.style.display = "none";
+      if (qrScanner) {
+        qrScanner.stop().then(() => qrScanner.clear()).catch(() => {});
+      }
+    }
 
-    const payload = {
-      partNumber: document.getElementById("partNumber").value,
-      lotNumber: document.getElementById("lotNumber").value,
-      quantity: document.getElementById("quantity").value
-    };
+    function toggleMode() {
+      const mode = document.getElementById("modeSelect").value;
+      const scannedCode = document.getElementById("scannedCode");
 
-    fetch("https://yorozu.softexpert.com/apigateway/v1/table/YOUR_TABLE_ID/record", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer YOUR_API_TOKEN",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    })
-    .then(res => {
-      if (!res.ok) throw new Error("Submission failed");
-      return res.json();
-    })
-    .then(data => {
-      alert("✅ Submitted!");
-      // Clear fields after submit
+      if (mode === "camera") {
+        scannedCode.readOnly = true;
+        startCamera();
+      } else {
+        scannedCode.readOnly = false;
+        stopCamera();
+        scannedCode.focus();
+      }
+
+      scannedCode.value = "";
+      scannedCode.classList.remove("valid", "invalid");
       document.getElementById("dataForm").reset();
-      lastScan = "";
-    })
-    .catch(err => alert("❌ Error: " + err.message));
-  });
+    }
 
-  window.onload = toggleMode;
-</script>
+    document.getElementById("dataForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      const payload = {
+        partNumber: document.getElementById("partNumber").value,
+        lotNumber: document.getElementById("lotNumber").value,
+        quantity: document.getElementById("quantity").value
+      };
+
+      fetch("https://yorozu.softexpert.com/apigateway/v1/table/YOUR_TABLE_ID/record", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer YOUR_API_TOKEN",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(res => {
+        if (!res.ok) throw new Error("Submission failed");
+        return res.json();
+      })
+      .then(data => {
+        alert("✅ Submitted!");
+        document.getElementById("dataForm").reset();
+        document.getElementById("scannedCode").value = "";
+        document.getElementById("scannedCode").classList.remove("valid", "invalid");
+        lastScan = "";
+      })
+      .catch(err => alert("❌ Error: " + err.message));
+    });
+
+    window.onload = toggleMode;
+  </script>
 
 </body>
 </html>
